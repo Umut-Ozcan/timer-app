@@ -1,5 +1,14 @@
 import tkinter as tk
 from tkinter import ttk, font, messagebox, colorchooser
+import threading
+import urllib.request
+import json
+import os
+import sys
+
+CURRENT_VERSION = "1.0"
+VERSION_URL = "https://raw.githubusercontent.com/Umut-Ozcan/timer-app/main/version.txt"
+SCRIPT_URL  = "https://raw.githubusercontent.com/Umut-Ozcan/timer-app/main/timer_app.py"
 
 DEFAULT_THEME = {
     "bg":       "#1a1a2e",
@@ -321,6 +330,62 @@ class TimerApp(tk.Tk):
         self._build_ui()
         self._update_display()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Guncelleme kontrolu arka planda
+        threading.Thread(target=self._check_update, daemon=True).start()
+
+    def _check_update(self):
+        try:
+            with urllib.request.urlopen(VERSION_URL, timeout=5) as r:
+                latest = r.read().decode().strip()
+            if latest != CURRENT_VERSION:
+                self.after(0, lambda: self._ask_update(latest))
+        except Exception:
+            pass
+
+    def _ask_update(self, latest):
+        if messagebox.askyesno(
+            "Guncelleme Mevcut",
+            "Yeni surum: v" + latest + " / Simdi: v" + CURRENT_VERSION + " - Guncellensin mi?"
+        ):
+            self._do_update()
+
+    def _do_update(self):
+        win = tk.Toplevel(self)
+        win.title("Guncelleniyor...")
+        win.configure(bg=self.C["bg"])
+        win.resizable(False, False)
+        win.attributes("-topmost", True)
+        win.geometry("300x120")
+        lbl = tk.Label(win, text="Guncelleme indiriliyor...",
+                       font=("Arial", 12), bg=self.C["bg"], fg=self.C["text"])
+        lbl.pack(pady=(30, 10))
+        tk.Label(win, text="Lutfen bekleyin.", font=("Arial", 10),
+                 bg=self.C["bg"], fg=self.C["muted"]).pack()
+
+        def download():
+            try:
+                script_path = os.path.abspath(sys.argv[0])
+                with urllib.request.urlopen(SCRIPT_URL, timeout=15) as r:
+                    new_code = r.read()
+                # Yedek al
+                backup = script_path + ".bak"
+                if os.path.exists(script_path):
+                    import shutil
+                    shutil.copy2(script_path, backup)
+                with open(script_path, "wb") as f:
+                    f.write(new_code)
+                self.after(0, lambda: [
+                    win.destroy(),
+                    messagebox.showinfo("Guncellendi!",
+                        "Guncelleme tamamlandi! Programi yeniden baslatin."),
+                ])
+            except Exception as e:
+                self.after(0, lambda: [
+                    win.destroy(),
+                    messagebox.showerror("Hata", "Guncelleme basarisiz: " + str(e))
+                ])
+
+        threading.Thread(target=download, daemon=True).start()
 
     def _on_close(self):
         if self.display_win: self.display_win.destroy()
